@@ -142,13 +142,6 @@ uint8_t* download(String url, uint32_t *psize)
     {
         size_t len = stream->available();
 
-        if(Serial.available())
-        {
-            http.end();
-            free(p);
-            return NULL;
-        }
-
         if (!len)
         {
             delay(1);
@@ -176,67 +169,12 @@ uint8_t* download(String url, uint32_t *psize)
     return p;
 }
 
-void save(uint8_t* jpg, uint32_t size)
-{
-    if(jpg == NULL)
-    {
-        log_e("null jpg pointer");
-        return;
-    }
-    File file = SPIFFS.open("/cache.jpg", FILE_WRITE);
-    if (!file)
-    {
-        log_e("Failed to open file for writing");
-        return;
-    }
-    int i;
-    for(i = 0; i < size; i += 512)
-    {
-        log_d("saving %d / %d", i, size);
-        uint32_t written = file.write(jpg + i, 512);
-        if(written != 512)
-        {
-            log_e("SPIFFS write error at %d", i);
-            file.close();
-            SPIFFS.remove("/cache.jpg");
-            break;
-        }
-        if(Serial.available())
-        {
-            file.close();
-            return;
-        }
-    }
-    i -= 512;
-    uint32_t written = file.write(jpg + i, size - i);
-    if(written != size - i)
-    {
-        log_e("SPIFFS write error");
-        file.close();
-        SPIFFS.remove("/cache.jpg");
-        return;
-    }
-    
-    file.close();
-    log_d("image saved.");
-}
-
 int run()
 {
     bool ret = false;
     _canvas->setTextSize(26);
     _canvas->setTextDatum(CC_DATUM);
     _canvas->drawString("Please upload the url to the picture", 270, 480);
-    if (SPIFFS.exists("/cache.jpg"))
-    {
-        _canvas->fillCanvas(0);
-        ret = _canvas->drawJpgFile(SPIFFS, "/cache.jpg");
-            _canvas->pushCanvas(0, 0, UPDATE_MODE_GC16);
-        if(ret == 0)
-        {
-            SPIFFS.remove("/cache.jpg");
-        }
-    }
     if ((ret == 0) && getImageUrl().length())
     {
         uint32_t size;
@@ -250,7 +188,6 @@ int run()
                 _canvas->drawString("Error decoding image, please try again", 270, 480);
             }
             _canvas->pushCanvas(0, 0, UPDATE_MODE_GC16);
-            save(jpg, size);
             free(jpg);
         }
     }
@@ -308,10 +245,16 @@ void setup()
     LoadingAnime_32x32_Stop();
     run();
 
+    // ディスプレイの表示完了を待つ(1s)
+    delay(1000);
+
     M5.RTC.setAlarmIRQ(getWakeTime());
     M5.disableMainPower();
 }
 
 void loop()
 {
+    // USBから給電されてるときでも再起動するように
+    delay(1000 * getWakeTime());
+    esp_restart();
 }
